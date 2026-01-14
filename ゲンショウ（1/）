@@ -1,0 +1,294 @@
+index.html
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <style>
+        :root { --gold: #ffd700; --bg: #0d0d0d; --hp-green: #2ecc71; --hp-red: #e74c3c; }
+        body { font-family: 'Hiragino Kaku Gothic ProN', sans-serif; background: #000; color: #fff; margin: 0; overflow: hidden; height: 100vh; }
+        
+        #launcher { position: fixed; inset: 0; background: radial-gradient(circle, #444, #000); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+        #game-view { display: none; width: 100vw; height: 100vh; flex-direction: column; background: var(--bg); }
+        .screen { display: none; flex: 1; padding: 10px; overflow-y: auto; padding-bottom: 120px; }
+        .active { display: flex; flex-direction: column; }
+
+        /* ⚔️ バトルステージ */
+        #battle-stage { width: 100%; height: 220px; background: linear-gradient(#001, #112); position: relative; border-bottom: 3px solid #555; overflow: hidden; }
+        #enemy-castle-hp { position: absolute; top: 10px; right: 10px; width: 150px; background: rgba(0,0,0,0.6); padding: 5px; border-radius: 5px; border: 1px solid var(--hp-red); z-index: 10; }
+        .unit { position: absolute; bottom: 10px; display: flex; flex-direction: column; align-items: center; transition: left 0.1s linear; }
+        .unit img { width: 40px; height: 40px; border-radius: 5px; }
+        .hp-bar { width: 35px; height: 4px; background: #333; border-radius: 2px; }
+        .hp-fill { height: 100%; background: var(--hp-green); transition: width 0.2s; }
+        .enemy-unit .hp-fill { background: var(--hp-red); }
+
+        /* 📖 ガチャ演出 */
+        #gacha-fx { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.98); z-index: 5000; align-items: center; justify-content: center; flex-direction: column; }
+        .book-anim { width: 120px; height: 160px; background: #f5f5dc; border: 4px solid #8b4513; animation: flip 0.2s infinite; transform-origin: left; }
+        @keyframes flip { 0% { transform: rotateY(0); } 100% { transform: rotateY(-180deg); } }
+
+        /* UI */
+        nav { position: absolute; bottom: 0; width: 100%; background: #111; display: flex; border-top: 2px solid var(--gold); height: 70px; }
+        nav button { background: none; border: none; color: #777; flex: 1; font-size: 10px; }
+        nav button.active-nav { color: var(--gold); background: #222; }
+        .btn { background: var(--gold); color: #000; border: none; padding: 10px 15px; border-radius: 5px; font-weight: bold; cursor: pointer; }
+        .card { background: #222; padding: 12px; border-radius: 8px; margin-bottom: 10px; border: 1px solid #333; }
+        #fs-btn { position: fixed; top: 10px; left: 10px; z-index: 10001; background: rgba(255,215,0,0.3); color: #fff; border-radius: 50%; width: 35px; height: 35px; border: none; }
+    </style>
+</head>
+<body>
+
+    <button id="fs-btn" onclick="toggleFS()">🖥️</button>
+
+    <div id="launcher">
+        <h1 style="color:var(--gold);">学戦コネクト</h1>
+        <div id="setup">
+            <input type="text" id="p-name" placeholder="司令官の名前...">
+            <button class="btn" onclick="nextStep()">次へ</button>
+        </div>
+        <div id="setup-sub" style="display:none;">
+            <p>得意科目を選択してください</p>
+            <button class="btn" onclick="startGame('math')">数学</button>
+            <button class="btn" onclick="startGame('sci')">理科</button>
+            <button class="btn" onclick="startGame('soc')">社会</button>
+        </div>
+    </div>
+
+    <div id="game-view">
+        <div id="home" class="screen active">
+            <h2>🌍 物語マップ</h2>
+            <div class="card">
+                <p>司令官: <span id="user-display" style="color:var(--gold);"></span></p>
+                <p>💰:<span id="coin-val">500</span> | 🎫:<span id="t-val">10</span> | 制覇:<span id="conq-val">0</span>/9</p>
+            </div>
+            <div id="map-grid" style="display:grid; grid-template-columns: repeat(3, 1fr); gap:10px;"></div>
+        </div>
+
+        <div id="battle" class="screen">
+            <div id="battle-stage">
+                <div id="enemy-castle-hp">
+                    <div style="font-size:10px; margin-bottom:2px;">敵陣の城 HP: <span id="castle-val">1000</span></div>
+                    <div class="hp-bar"><div id="castle-bar" class="hp-fill" style="background:var(--hp-red); width:100%;"></div></div>
+                </div>
+            </div>
+            <div id="battle-ui" style="background:#1a1a1a; padding:10px;">
+                <p id="q-area" style="color:var(--gold); font-size:14px; min-height:40px; font-weight:bold;">戦況待機中...</p>
+                <div id="bt-ctrl"><button class="btn" onclick="nextQuestion()">進軍（問題開始）</button></div>
+                <div id="ans-area" style="display:none;">
+                    <input type="text" id="ans-in" style="width:50%; padding:8px;" placeholder="答え or わからない">
+                    <button class="btn" onclick="attack()">攻撃!</button>
+                </div>
+                <div id="reward-area" style="display:none; gap:10px;">
+                    <button class="btn" onclick="applyReward('spawn')" style="flex:1;">新規召喚</button>
+                    <button class="btn" onclick="applyReward('buff')" style="flex:1;">教科(強化)</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="gacha" class="screen">
+            <h2>💎 究極召喚</h2>
+            <div class="card" style="text-align:center;">
+                <p>SSR: 2% / SR: 8% / R: 30% / N: 60%</p>
+                <button class="btn" style="width:100%; height:50px;" onclick="drawGacha()">古文書を解読する</button>
+            </div>
+        </div>
+
+        <div id="chars" class="screen">
+            <h2>👤 ユニット図鑑</h2>
+            <div id="dex-box"></div>
+        </div>
+
+        <nav>
+            <button onclick="nav('home')" id="n-home" class="active-nav">🌍<br>物語</button>
+            <button onclick="nav('battle')" id="n-battle">⚔️<br>対戦</button>
+            <button onclick="nav('gacha')" id="n-gacha">💎<br>召喚</button>
+            <button onclick="nav('chars')" id="n-chars">👤<br>図鑑</button>
+        </nav>
+
+        <div id="gacha-fx">
+            <div id="fx-view"></div>
+            <div id="fx-res" style="display:none; text-align:center;">
+                <h1 id="r-rar" style="margin:0;"></h1>
+                <img id="r-img" src="" style="width:140px; border:3px solid gold;">
+                <h2 id="r-name"></h2>
+                <div id="r-stats" style="font-size:12px; color:#aaa;"></div>
+                <button class="btn" onclick="closeGacha()">図鑑へ</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- ユニットデータ ---
+        const charDB = [
+            { name:"数学歩兵", rar:"N", sub:"math", hp:100, atk:20, spd:2, seed:"m1" },
+            { name:"アルキメデス", rar:"SSR", sub:"math", hp:650, atk:180, spd:1, seed:"m2" },
+            { name:"アンモニア君", rar:"SR", sub:"sci", hp:350, atk:80, spd:3, seed:"s1" },
+            { name:"織田信長", rar:"SSR", sub:"soc", hp:600, atk:170, spd:2, seed:"so1" },
+            { name:"ピタゴラス", rar:"SR", sub:"math", hp:320, atk:90, spd:2, seed:"m3" }
+        ];
+
+        // --- 無限問題生成エンジン ---
+        const generateQuestion = (lv) => {
+            const types = ['math', 'sci', 'soc'];
+            const type = types[Math.floor(Math.random() * types.length)];
+            const diff = lv + 1;
+
+            if (type === 'math') {
+                const op = ['+', '-', '×'][Math.floor(Math.random() * 3)];
+                let n1 = Math.floor(Math.random() * (10 * diff)) + 1;
+                let n2 = Math.floor(Math.random() * (10 * diff)) + 1;
+                if (op === '×' && diff > 1) { n1 = Math.floor(Math.random() * 12) + 2; n2 = Math.floor(Math.random() * 12) + 2; }
+                const q = `${n1} ${op} ${n2} = ?`;
+                const a = op === '+' ? n1 + n2 : op === '-' ? n1 - n2 : n1 * n2;
+                return { q, a: String(a) };
+            } else if (type === 'sci') {
+                const sciData = [
+                    {q: "水の沸点は？", a: "100"}, {q: "光合成で必要な気体は？", a: "二酸化炭素"},
+                    {q: "氷が溶ける温度は？", a: "0"}, {q: "昆虫の足の数は？", a: "6"},
+                    {q: "月は地球の何？", a: "衛星"}, {q: "理科で使う液体を測る道具は？", a: "メスシリンダー"}
+                ];
+                return sciData[Math.floor(Math.random() * sciData.length)];
+            } else {
+                const socData = [
+                    {q: "江戸幕府をひらいたのは？", a: "徳川家康"}, {q: "聖徳太子が定めたのは？", a: "十七条の憲法"},
+                    {q: "日本の現在の都道県数は？", a: "47"}, {q: "世界一高い山は？", a: "エベレスト"},
+                    {q: "1600年に起きた戦いは？", a: "関ヶ原の戦い"}
+                ];
+                return socData[Math.floor(Math.random() * socData.length)];
+            }
+        };
+
+        let myUnits = [], enemyUnits = [], inventory = [], conquered = 0, coins = 500, tickets = 10, activeQ = null;
+        let castleHP = 1000, maxCastleHP = 1000;
+
+        function nextStep() { document.getElementById('setup').style.display='none'; document.getElementById('setup-sub').style.display='block'; }
+        function startGame(sub) {
+            document.getElementById('user-display').innerText = document.getElementById('p-name').value || "司令官";
+            document.getElementById('launcher').style.display = 'none';
+            document.getElementById('game-view').style.display = 'flex';
+            toggleFS();
+            inventory.push(charDB.find(c => c.sub === sub && c.rar === "N") || charDB[0]);
+            updateUI(); buildMap();
+        }
+
+        function toggleFS() { if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(()=>{}); }
+        function nav(id) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('nav button').forEach(b => b.classList.remove('active-nav'));
+            document.getElementById(id).classList.add('active');
+            document.getElementById('n-'+id).classList.add('active-nav');
+        }
+
+        function buildMap() {
+            const grid = document.getElementById('map-grid'); grid.innerHTML = "";
+            for(let i=0; i<9; i++) {
+                let c = document.createElement('div');
+                c.style = `height:65px; background:${i < conquered ? "#004400" : "#222"}; border:1px solid ${i===conquered ? 'gold' : '#444'}; border-radius:8px; display:flex; align-items:center; justify-content:center; font-size:10px; cursor:pointer;`;
+                c.innerText = i < conquered ? "制覇" : "エリア "+(i+1);
+                if(i === conquered) c.onclick = () => { nav('battle'); startNewBattle(); };
+                grid.appendChild(c);
+            }
+        }
+
+        function startNewBattle() {
+            document.getElementById('battle-stage').querySelectorAll('.unit').forEach(u => u.remove());
+            myUnits = []; enemyUnits = [];
+            castleHP = 1000 + (conquered * 1000);
+            maxCastleHP = castleHP;
+            updateCastleUI();
+            document.getElementById('bt-ctrl').style.display = 'block';
+            document.getElementById('ans-area').style.display = 'none';
+            document.getElementById('reward-area').style.display = 'none';
+            document.getElementById('q-area').innerText = "敵軍拠点を捕捉！全軍、進軍せよ！";
+        }
+
+        function nextQuestion() {
+            activeQ = generateQuestion(conquered);
+            document.getElementById('q-area').innerText = `【問題】\n${activeQ.q}`;
+            document.getElementById('bt-ctrl').style.display = 'none';
+            document.getElementById('reward-area').style.display = 'none';
+            document.getElementById('ans-area').style.display = 'block';
+            
+            if(Math.random() > 0.4) createUnit({ name:"敵兵", hp:100+(conquered*50), atk:10+(conquered*5), spd:1, seed:"e"+Math.random() }, 'enemy');
+        }
+
+        function attack() {
+            const input = document.getElementById('ans-in').value;
+            if (input === "わからない") {
+                damageAllMyUnits(50);
+                nextQuestion();
+            } else if (input === activeQ.a) {
+                document.getElementById('ans-area').style.display = 'none';
+                document.getElementById('reward-area').style.display = 'flex';
+                castleHP -= 200;
+                updateCastleUI();
+                if(castleHP <= 0) {
+                    alert("敵拠点陥落！エリアクリア！");
+                    conquered++; coins += 300; buildMap(); nav('home'); updateUI();
+                }
+            } else {
+                alert("不正解！味方にダメージ！");
+                damageAllMyUnits(30);
+            }
+            document.getElementById('ans-in').value = "";
+        }
+
+        function damageAllMyUnits(dmg) {
+            myUnits.forEach(u => { u.hp -= dmg; u.updateHP(); if(u.hp <= 0) u.el.remove(); });
+            myUnits = myUnits.filter(u => u.hp > 0);
+        }
+
+        function applyReward(type) {
+            if(type === 'spawn') createUnit(inventory[Math.floor(Math.random()*inventory.length)], 'my');
+            else { myUnits.forEach(u => { u.hp = u.maxHp; u.atk += 25; u.updateHP(); }); }
+            nextQuestion();
+        }
+
+        function updateCastleUI() {
+            document.getElementById('castle-val').innerText = Math.max(0, castleHP);
+            document.getElementById('castle-bar').style.width = (Math.max(0, castleHP)/maxCastleHP*100)+'%';
+        }
+
+        function createUnit(data, side) {
+            const el = document.createElement('div');
+            el.className = `unit ${side}-unit`;
+            el.innerHTML = `<div class="hp-bar"><div class="hp-fill" style="width:100%"></div></div><img src="https://api.dicebear.com/7.x/bottts/svg?seed=${data.seed}">`;
+            el.style.left = side === 'my' ? "10px" : "calc(100% - 50px)";
+            document.getElementById('battle-stage').appendChild(el);
+            const obj = { ...data, maxHp: data.hp, el: el, pos: side==='my'?10:280, side: side, updateHP: function(){ el.querySelector('.hp-fill').style.width=(this.hp/this.maxHp*100)+'%'; }};
+            if(side === 'my') myUnits.push(obj); else enemyUnits.push(obj);
+        }
+
+        setInterval(() => {
+            myUnits.forEach(u => { u.pos += u.spd; u.el.style.left = u.pos + 'px'; if(u.pos > 300) u.pos = 10; });
+            enemyUnits.forEach(e => { e.pos -= e.spd; e.el.style.left = e.pos + 'px'; if(e.pos < 10) e.pos = 280; });
+        }, 100);
+
+        function drawGacha() {
+            if(tickets <= 0) return alert("券不足");
+            tickets--; updateUI();
+            const fx = document.getElementById('gacha-fx');
+            fx.style.display = 'flex';
+            document.getElementById('fx-res').style.display = 'none';
+            document.getElementById('fx-view').innerHTML = '<div class="book-anim"></div><p>解読中...</p>';
+            setTimeout(() => {
+                const rand = Math.random();
+                let rar = rand < 0.6 ? "N" : (rand < 0.9 ? "R" : (rand < 0.98 ? "SR" : "SSR"));
+                let pool = charDB.filter(c => c.rar === rar);
+                let picked = pool[Math.floor(Math.random() * pool.length)] || charDB[0];
+                document.getElementById('fx-view').innerHTML = "";
+                document.getElementById('fx-res').style.display = 'block';
+                document.getElementById('r-rar').innerText = picked.rar;
+                document.getElementById('r-img').src = `https://api.dicebear.com/7.x/bottts/svg?seed=${picked.seed}`;
+                document.getElementById('r-name').innerText = picked.name;
+                document.getElementById('r-stats').innerText = `HP:${picked.hp} ATK:${picked.atk}`;
+                inventory.push(picked);
+            }, 2000);
+        }
+
+        function closeGacha() { document.getElementById('gacha-fx').style.display='none'; nav('chars'); renderDex(); }
+        function updateUI() { document.getElementById('coin-val').innerText = coins; document.getElementById('t-val').innerText = tickets; document.getElementById('conq-val').innerText = conquered; }
+        function renderDex() { document.getElementById('dex-box').innerHTML = inventory.map(u => `<div class="card"><b>[${u.rar}] ${u.name}</b> ATK:${u.atk} HP:${u.hp}</div>`).join(''); }
+    </script>
+</body>
+</html>
